@@ -4,7 +4,17 @@
 
 **Case study:** a simulated single-wafer PECVD silicon nitride (SiNx) process across four chambers, plus real fab sensor data (UCI SECOM) for yield analysis.
 
-> **Status:** In progress. Steps 1–5 are complete: simulator, Gauge R&R, screening DOE, response surface optimization and fleet matching. Next is yield analysis on real fab data (UCI SECOM).
+> **Status:** Complete. All six steps are analyzed in JMP and reproduced in Python.
+
+## Results at a glance
+
+| Step | Question | Answer |
+|---|---|---|
+| 2. Gauge R&R | Can I trust my measurements? | Thickness gauge yes (7.5% GRR). Stress gauge marginal (29%, 4 distinct categories) because of instrument repeatability; averaging 3 readings fixes it. |
+| 3. Screening DOE | Which knobs matter? | NH3/SiH4 ratio sets rate and RI; uniformity is driven by interactions; temperature is an independent stress knob; strong curvature everywhere. |
+| 4. Response surface | Where is the best operating window? | One recipe hits rate, uniformity, RI and stress targets. Confirmation runs caught a 10 MPa model bias that temperature then corrected. |
+| 5. Fleet matching | Where does my variation come from? | 83% from chamber-to-chamber differences. Per-chamber deposition time took fleet Ppk from 0.57 to 1.28 and out-of-spec wafers from 4 to 0. |
+| 6. Real fab data (SECOM) | Can sensor data predict yield? | Not reliably across time. A model that scores ROC AUC 0.74 in random cross-validation drops to 0.56 on later production, because the failure drivers drift. |
 
 ---
 
@@ -17,7 +27,7 @@
 | 3. Factor screening | 2^(5-1) fractional factorial | JMP + Python | Done |
 | 4. Process window optimization | Central composite RSM, multi-response desirability, confirmation runs | JMP + Python | Done |
 | 5. Variance sources and chamber matching | Nested variance components, ANOVA, Tukey, equivalence (TOST), Ppk | JMP + Python | Done |
-| 6. Yield driver analysis (real data) | Data cleaning, predictor screening, PCA, classification on UCI SECOM | JMP + Python | Planned |
+| 6. Yield driver analysis (real data) | Data cleaning, predictor screening, FDR, PCA, classification with time-ordered validation on UCI SECOM | JMP + Python | Done |
 
 ## Results
 
@@ -144,6 +154,45 @@ Chamber explains 90% of the wafer-to-wafer variation (one-way R² = 0.90). Every
 
 ![Chamber matching](plots/chamber_matching.png)
 
+### Step 6: Yield driver analysis on real fab data (UCI SECOM)
+
+**Data:** 1,567 production units from a real semiconductor fab, each with 590 anonymized sensor signals, a pass/fail result from in-line test, and a timestamp (July–October 2008). 104 fails (6.6%), 41,951 missing values (4.5%) [7]. `src/secom_analysis.py` runs the whole pipeline, and JMP Predictor Screening was used to check the sensor ranking.
+
+**Cleaning:** removed 116 constant sensors, 28 sensors more than 50% empty and 6 sensors that never vary during the training period, which leaves **440**. The remaining gaps were filled with training-period medians.
+
+**Time-ordered split.** The weekly fail rate fell from about 22% in July to about 3% in September, so the process was changing during collection. The first 70% of units (19 Jul – 26 Sep, 78 fails) were used for training and the last 30% (26 Sep – 17 Oct, 26 fails) only for testing. All screening and model fitting used training data only.
+
+| Check | Result |
+|---|---|
+| Sensors with p < 0.05 (Mann-Whitney, training) | 75, but about 22 would pass by chance alone with 440 tests |
+| Sensors surviving FDR control (Benjamini-Hochberg, q < 0.05) | **22** |
+| Top sensor (both methods) | **S059**: #1 by Mann-Whitney and by random forest in Python and in JMP, with 10% of total importance in JMP, more than 6 times the #2 sensor |
+| JMP vs Python top-20 forest rankings | 12 of 20 shared (both forests are random) |
+| Top-10 screened sensors still significant in the later test period | **1 of 10** (S103) |
+| PCA | Fails don't form a cluster; 83 components needed for 80% of the variance; of the first 5 components only PC2 shows a pass/fail shift |
+
+| Model | ROC AUC, random 5-fold CV | **ROC AUC, later test period** | PR AUC (no skill = 0.055) | Fails caught inspecting riskiest 10% |
+|---|---|---|---|---|
+| Logistic regression, top 20 screened sensors | 0.74 | **0.56** | 0.087 | 23% (6 of 26) |
+| Random forest, all 440 sensors | 0.74 | **0.57** | 0.067 | 8% |
+| Logistic regression, 4 sensors stable across both halves of training | – | **0.47** | 0.060 | 4% |
+
+**Findings**
+- **Random cross-validation hides drift.** It mixes later units into training and reports ROC AUC 0.74. Tested on later production, the same models score 0.56–0.57, barely better than chance. On data like this, any validation that isn't ordered in time overstates what a model will do on the line.
+- **The yield drivers changed over time.** 9 of the top 10 sensors that separated passes from fails during training stopped separating them in the later period, and requiring consistency within the training period didn't help either. The failure modes in October weren't the ones from July–September.
+- **Multiple-testing control matters.** With 440 sensors, about 22 look "significant" at p < 0.05 by luck alone. FDR control keeps 22 that are very unlikely to be pure chance, and even most of those didn't carry forward in time.
+- **One lead worth an engineering look: S103.** It's the only screened sensor that stayed significant in the test period (ROC AUC 0.65 in training, 0.71 in testing). It was picked after looking at the test data, so it's a hypothesis for the process engineers, not a validated predictor.
+- **What I'd do in a fab:** treat sensor-based yield models as monitors that are retrained on a rolling window and checked against the most recent production, track signals like S059 and S103 on control charts, and tie fail clusters back to tool and lot history. That history is what SECOM's anonymized sensors can't provide.
+- **Small-sample caveat:** the test period has only 26 fails, so differences of a few fails (for example the 23% vs 8% capture rates) carry wide uncertainty.
+
+| JMP Predictor Screening (training period only) |
+|---|
+| ![](plots/jmp_secom_predictor_screening.png) |
+
+![SECOM overview](plots/secom_overview.png)
+![SECOM PCA](plots/secom_pca.png)
+![SECOM models](plots/secom_models.png)
+
 ## The simulated process
 
 | Factor | Range | Units |
@@ -188,6 +237,7 @@ python rsm_analysis.py ..\data\rsm_results.csv            # Step 4: RSM fit + op
 python confirm.py ..\data\rsm_results.csv "RF_Power=600,Pressure=4.67,Temp=400,NH3_SiH4=2.92,Spacing=300"
 python fleet_study.py baseline   # Step 5: fleet study, same dep time
 python fleet_study.py matched    # Step 5: per-chamber dep time, before vs after
+python secom_analysis.py         # Step 6: needs data/secom.data and data/secom_labels.data from UCI
 ```
 
 ## Project structure
@@ -195,7 +245,7 @@ python fleet_study.py matched    # Step 5: per-chamber dep time, before vs after
 ```
 src/     simulator (config.py, pecvd.py), metrology.py, analysis scripts
 jmp/     JMP data tables, JSL scripts and report screenshots
-data/    generated and public datasets (CSV)
+data/    generated data (CSV) and the public UCI SECOM dataset
 plots/   figures
 ```
 
