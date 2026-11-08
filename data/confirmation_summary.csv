@@ -1,0 +1,5 @@
+Response,Predicted,95% PI low,95% PI high,Confirmation mean,Wafers inside PI
+Dep_Rate,77.9471,73.6038,82.2903,77.714,5/5
+WIW_NU,0.7232,-0.2636,1.7101,0.5046,5/5
+RI,2.0038,1.9966,2.011,2.0011,5/5
+Stress,-165.3298,-182.2853,-148.3743,-153.92,4/5

@@ -4,7 +4,7 @@
 
 **Case study:** a simulated single-wafer PECVD silicon nitride (SiNx) process across four chambers, plus real fab sensor data (UCI SECOM) for yield analysis.
 
-> **Status:** In progress. Steps 1–3 are complete: simulator, Gauge R&R and screening DOE. Next is the response surface optimization.
+> **Status:** In progress. Steps 1–4 are complete: simulator, Gauge R&R, screening DOE and response surface optimization with confirmation runs. Next is variance components and chamber matching.
 
 ---
 
@@ -15,7 +15,7 @@
 | 1. PECVD chamber simulator | Physics-informed response model, 49-point wafer maps, 4 chambers | Python | Done |
 | 2. Measurement system analysis | Crossed Gauge R&R (ellipsometer, stress gauge) | JMP + Python | Done |
 | 3. Factor screening | 2^(5-1) fractional factorial | JMP + Python | Done |
-| 4. Process window optimization | Central composite RSM, multi-response desirability | JMP + Python | Planned |
+| 4. Process window optimization | Central composite RSM, multi-response desirability, confirmation runs | JMP + Python | Done |
 | 5. Variance sources and chamber matching | Nested variance components, ANOVA, Cpk per chamber | JMP + Python | Planned |
 | 6. Yield driver analysis (real data) | Data cleaning, predictor screening, PCA, classification on UCI SECOM | JMP + Python | Planned |
 
@@ -58,13 +58,44 @@ A **2^(5-1) Resolution V fractional factorial** with 4 center points (20 runs, r
 - **Uniformity is driven by interactions.** Power×Spacing and Power×Pressure are significant, so uniformity can't be tuned one factor at a time.
 - **Temperature is an independent stress knob.** It moves stress strongly but has no significant effect on RI, so stress can be adjusted without moving the RI target.
 - **Strong curvature in every response** (center-point test p < 0.001). The 4 center points sit about +4 nm/min above the linear model's prediction for rate, while all 16 corner runs sit near −1. A first-order model can't describe the middle of the window, so **Step 4 uses a response surface design**.
-- **Watch for false positives.** Temp×NH3/SiH4 on uniformity (p = 0.049) is borderline. With 15 effects tested at α = 0.05, about one false positive is expected by chance, and the simulator contains no such interaction. It will be checked again in the RSM.
+- **An aliased effect, not a false positive.** Temp×NH3/SiH4 on uniformity (p = 0.049) looked like chance at first, but it came back significant in Step 4 (t = 3.9). The design generator is Spacing = Power×Press×Temp×NH3, so in this Resolution V design **Temp×NH3/SiH4 is aliased with Power×Press×Spacing**. Uniformity really does depend on power, pressure and spacing together (see Step 4), so the effect is real but carries the wrong label. Separating the two would need a fold-over or the full 2^5 factorial.
 
 | JMP Effect Summary | Curvature: Dep_Rate residuals |
 |---|---|
 | ![](plots/jmp_screening_effect_summary.png) | ![](plots/jmp_screening_residuals.png) |
 
 ![Pareto of effects](plots/screening_pareto.png)
+
+### Step 4: Response surface optimization
+
+The screening design was **augmented** in JMP (DOE → Augment Design → Add Axial) into a **face-centered central composite design**: the original 20 runs plus 10 axial points and 2 center points, run as a second block after a chamber clean (32 runs total). The face-centered design keeps every run inside the equipment limits, and reusing the screening runs avoids a new 30-run experiment. The block effect was not significant for any response (p > 0.45), so it was dropped. A full quadratic model was fit in JMP (Fit Model → Response Surface) and in `src/rsm_analysis.py`, and the predictions match to 4 significant figures.
+
+| Response | R² | R² adj | RMSE | Lack of fit p |
+|---|---|---|---|---|
+| Deposition rate | 0.997 | 0.991 | 1.47 nm/min | < 0.001 |
+| WIW non-uniformity | 0.951 | 0.861 | 0.33 % | < 0.001 |
+| Refractive index | 0.9996 | 0.9988 | 0.0024 | 0.29 |
+| Stress | 0.998 | 0.995 | 5.7 MPa | 0.07 |
+
+**Multi-response optimization.** Goals: maximize rate (40→80 nm/min), minimize non-uniformity (2.0→0.5 %), RI on target 2.00 ± 0.02 and stress on target −150 ± 50 MPa. Optimized with JMP's Prediction Profiler (Maximize Desirability) and with a Derringer-Suich desirability search in Python. Each candidate recipe was then **confirmed with 5 wafers** on a freshly cleaned chamber (`src/confirm.py`):
+
+| Recipe | Power | Press | Temp | NH3/SiH4 | Spacing | Rate | WIW | RI | Stress | Result |
+|---|---|---|---|---|---|---|---|---|---|---|
+| JMP optimum | 583 W | 5.0 Torr | 400 °C | 3.10 | 300 mils | 71.6 | 0.80 % | 1.997 | −137.5 | 2/5 stress wafers outside PI |
+| Python optimum | 600 W | 4.67 Torr | 384 °C | 2.92 | 300 mils | 79.2 | 0.41 % | 1.998 | −141.0 | Stress ~9 MPa off target |
+| **Released recipe** | **600 W** | **4.67 Torr** | **400 °C** | **2.92** | **300 mils** | **77.7** | **0.50 %** | **2.001** | **−153.9** | **All responses on target** |
+
+**Findings**
+- **The confirmation runs caught a model bias.** Both optimizer recipes came back about 10 MPa less compressive than predicted. The bias is systematic, not random, and it is largest in the **corner of the window** where JMP's optimum sits (pressure and temperature both at their limits). A face-centered CCD has the fewest points in the corners, so the model is weakest there. Running only the model's prediction would have released an off-target recipe.
+- **Step 3's independent knob fixed it.** Temperature moves stress strongly but RI only slightly, so raising it from 384 to 400 °C brought stress back to target without moving RI out of spec. The released recipe hits all four goals on all 5 confirmation wafers, judged against the specs.
+- **The uniformity model is the weakest.** The thickness profile flips from center-thick to edge-thick across the window, so uniformity has a V-shaped minimum that a quadratic model can't follow (lack of fit p < 0.001, and prediction intervals that dip below zero). It over-predicts non-uniformity near the optimum (0.72 % predicted vs 0.50 % measured). A better approach would model the **signed center-to-edge profile**, which is smooth, and calculate uniformity from it.
+- **Two factors finished at their limits** (600 W power, 300 mils spacing), so the true optimum may lie outside the tested window. The next experiment would extend those two ranges if the tool allows.
+
+| JMP Prediction Profiler at maximum desirability |
+|---|
+| ![](plots/jmp_rsm_profiler.png) |
+
+![Response surfaces](plots/rsm_contours.png)
 
 ## The simulated process
 
@@ -105,6 +136,9 @@ python verify_trends.py        # literature trend check + plot
 python gauge_rr.py             # Step 2: Gauge R&R data + ANOVA results
 python run_doe.py ..\data\screening_design.csv          # Step 3: run the JMP design
 python screening_analysis.py ..\data\screening_results.csv  # Step 3: effects + Pareto
+python run_doe.py ..\data\rsm_design.csv                # Step 4: run the augmented CCD
+python rsm_analysis.py ..\data\rsm_results.csv            # Step 4: RSM fit + optimum
+python confirm.py ..\data\rsm_results.csv "RF_Power=600,Pressure=4.67,Temp=400,NH3_SiH4=2.92,Spacing=300"
 ```
 
 ## Project structure
