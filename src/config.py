@@ -59,6 +59,10 @@ NOISE = {
     "ri_wafer":        0.002,
     "ri_site":         0.001,
     "stress_wafer":    5.0,      # MPa
+    # day-to-day shifts, applied only when a chamber starts a new day (Step 5)
+    "rate_day_frac":   0.003,
+    "ri_day":          0.0015,
+    "stress_day":      4.0,
 }
 
 # Chamber drift between cleans (wall buildup)

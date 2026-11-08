@@ -4,7 +4,7 @@
 
 **Case study:** a simulated single-wafer PECVD silicon nitride (SiNx) process across four chambers, plus real fab sensor data (UCI SECOM) for yield analysis.
 
-> **Status:** In progress. Steps 1–4 are complete: simulator, Gauge R&R, screening DOE and response surface optimization with confirmation runs. Next is variance components and chamber matching.
+> **Status:** In progress. Steps 1–5 are complete: simulator, Gauge R&R, screening DOE, response surface optimization and fleet matching. Next is yield analysis on real fab data (UCI SECOM).
 
 ---
 
@@ -16,7 +16,7 @@
 | 2. Measurement system analysis | Crossed Gauge R&R (ellipsometer, stress gauge) | JMP + Python | Done |
 | 3. Factor screening | 2^(5-1) fractional factorial | JMP + Python | Done |
 | 4. Process window optimization | Central composite RSM, multi-response desirability, confirmation runs | JMP + Python | Done |
-| 5. Variance sources and chamber matching | Nested variance components, ANOVA, Cpk per chamber | JMP + Python | Planned |
+| 5. Variance sources and chamber matching | Nested variance components, ANOVA, Tukey, equivalence (TOST), Ppk | JMP + Python | Done |
 | 6. Yield driver analysis (real data) | Data cleaning, predictor screening, PCA, classification on UCI SECOM | JMP + Python | Planned |
 
 ## Results
@@ -97,6 +97,53 @@ The screening design was **augmented** in JMP (DOE → Augment Design → Add Ax
 
 ![Response surfaces](plots/rsm_contours.png)
 
+### Step 5: Fleet variance components and chamber matching
+
+The released recipe was run on **all 4 chambers: 5 days × 3 wafers per chamber, 49 sites per wafer** (60 wafers, 2,940 site measurements). Each day starts with a chamber clean and a small random day-to-day shift. Thickness spec is 3000 Å ± 2.5% (2925–3075 Å). `src/fleet_study.py` generates the data and runs the analysis. JMP reproduces every number: Variability Chart (nested) → Variance Components, Fit Y by X → Tukey HSD + Equivalence Test (±30 Å), and Process Capability.
+
+**Where the variation comes from (baseline, same deposition time on every chamber):**
+
+| Source (nested) | Std dev (Å) | % of variance |
+|---|---|---|
+| **Chamber** | 46.4 | **83.5%** |
+| Day [Chamber] | 9.1 | 3.2% |
+| Wafer [Chamber, Day] | 11.3 | 5.0% |
+| Site (within wafer) | 14.6 | 8.3% |
+
+Chamber explains 90% of the wafer-to-wafer variation (one-way R² = 0.90). Every chamber pair is statistically different (Tukey), and only one pair (T1-B vs T2-B) is **practically equivalent** within ±30 Å, even though it is also statistically different (p = 0.006). The capability Goal Plot shows similar spread on all 4 chambers but means pushed left and right: **a centering problem, not a spread problem**.
+
+**Fix: per-chamber deposition time**, scaled from each chamber's baseline mean (T2-A +5.0 s, T2-B −3.2 s, T1-B −1.8 s, T1-A +0.6 s). Then the study was repeated:
+
+| | Before matching | After matching |
+|---|---|---|
+| Chamber share of thickness variance | 83.5% | **0%** |
+| Total thickness std dev | 50.7 Å | **24.1 Å** |
+| Chamber pairs equivalent (±30 Å), wafer-level test | 1 of 6 | **6 of 6** |
+| Chamber pairs equivalent (±30 Å), day-level test | 0 of 6 | **5 of 6** |
+| Fleet thickness Ppk | 0.57 | **1.28** |
+| Wafers out of spec (of 60) | 4 | **0** |
+
+**Findings**
+- **Matching the deposition time removed the dominant source of variation.** That fixes thickness centering with a recipe parameter, with no hardware change.
+- **Day-to-day variation is now the largest component** (40% of what remains), so the next lever is the chamber's state after each clean: seasoning wafers and post-clean qual limits. The day estimate rests on only 16 degrees of freedom, so its jump from 9 to 15 Å is mostly sampling noise.
+- **Single-chamber Ppk from 15 wafers is imprecise.** T1-A's Ppk fell from 1.68 to 1.02 even though its time changed by just 0.6 s. With n = 15, the 95% interval on a Ppk is about ±0.4 at Ppk 1.0 and ±0.6 at Ppk 1.7, so the fleet-level Ppk is the number to manage to.
+- **Time matching only fixes thickness.** RI and stress still differ significantly between chambers (for example, T2-A runs about 25 MPa more compressive than T2-B), and within-wafer spread is a stable per-chamber signature (about 18 Å on T2-A vs 11 Å on T2-B). Everything is inside spec, but closing those gaps would take per-chamber power, gas or spacing offsets, because they come from hardware differences.
+- **The stricter test needs more days.** The Tukey and equivalence tests above treat the 15 wafers per chamber as independent, but wafers from the same day share that day's shift. Repeating the tests on **day means** (5 per chamber, days as the independent units) keeps the overall conclusion: the chamber ANOVA goes from p < 10⁻⁹ to p = 0.65. But only **5 of 6 pairs** are then proven equivalent after matching. T1-A vs T2-A misses at p = 0.06 (a 12.6 Å gap, inside the margin but not yet proven with 5 days). Before release, I would run more days on those two chambers rather than claim equivalence on wafer-level data.
+
+| JMP nested variance components (baseline) |
+|---|
+| ![](plots/jmp_fleet_vc_baseline.png) |
+
+| Equivalence (±30 Å) before | Equivalence after |
+|---|---|
+| ![](plots/jmp_equiv_before.png) | ![](plots/jmp_equiv_after.png) |
+
+| Capability Goal Plot before | Goal Plot after |
+|---|---|
+| ![](plots/jmp_goal_before.png) | ![](plots/jmp_goal_after.png) |
+
+![Chamber matching](plots/chamber_matching.png)
+
 ## The simulated process
 
 | Factor | Range | Units |
@@ -109,7 +156,7 @@ The screening design was **augmented** in JMP (DOE → Augment Design → Add Ax
 
 **Responses:** deposition rate, within-wafer non-uniformity (1σ % from a 49-point map), refractive index at 633 nm, film stress.
 
-Each chamber has its own small offsets in rate, RI, stress and radial profile, along with drift between cleans. Measurements come from a separate metrology model with repeatability and operator bias, so measurement noise can be separated from process noise.
+Each chamber has its own small offsets in rate, RI, stress and radial profile, along with drift between cleans and a small random shift each production day. Measurements come from a separate metrology model with repeatability and operator bias, so measurement noise can be separated from process noise.
 
 ### Model check against literature
 
@@ -139,6 +186,8 @@ python screening_analysis.py ..\data\screening_results.csv  # Step 3: effects + 
 python run_doe.py ..\data\rsm_design.csv                # Step 4: run the augmented CCD
 python rsm_analysis.py ..\data\rsm_results.csv            # Step 4: RSM fit + optimum
 python confirm.py ..\data\rsm_results.csv "RF_Power=600,Pressure=4.67,Temp=400,NH3_SiH4=2.92,Spacing=300"
+python fleet_study.py baseline   # Step 5: fleet study, same dep time
+python fleet_study.py matched    # Step 5: per-chamber dep time, before vs after
 ```
 
 ## Project structure

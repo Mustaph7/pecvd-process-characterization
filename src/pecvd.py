@@ -70,6 +70,7 @@ class WaferResult:
     ri: np.ndarray                   # 49 sites, true refractive index
     stress_mpa: float                # true wafer stress (negative = compressive)
     wafer_id: str = ""
+    dep_time_s: float = DEP_TIME_S   # deposition time used for this wafer
 
     @property
     def mean_thk_A(self):
@@ -77,7 +78,7 @@ class WaferResult:
 
     @property
     def dep_rate_nm_min(self):
-        return self.mean_thk_A / 10.0 / (DEP_TIME_S / 60.0)
+        return self.mean_thk_A / 10.0 / (self.dep_time_s / 60.0)
 
     @property
     def wiw_nu_pct(self):
@@ -165,19 +166,30 @@ class Chamber:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.wafers_since_clean = 0
         self._count = 0
+        self.day = {"rate": 0.0, "ri": 0.0, "stress": 0.0}   # day-to-day shift
+
+    def new_day(self):
+        """Start a new production day: chamber clean plus a small random shift
+        (e.g. after preventive maintenance or a new gas bottle)."""
+        self.clean()
+        self.day = {"rate": self.rng.normal(0, NOISE["rate_day_frac"]),
+                    "ri": self.rng.normal(0, NOISE["ri_day"]),
+                    "stress": self.rng.normal(0, NOISE["stress_day"])}
 
     def clean(self):
         self.wafers_since_clean = 0
 
-    def run(self, recipe: Recipe, noise=True) -> WaferResult:
+    def run(self, recipe: Recipe, noise=True, dep_time_s=None) -> WaferResult:
+        dep_time_s = DEP_TIME_S if dep_time_s is None else dep_time_s
         rng = self.rng
         n = self.wafers_since_clean
 
         # Mean thickness (A) with chamber offset and drift
-        rate = mean_dep_rate(recipe) * self.p["rate_mult"] * (1 + DRIFT["rate_per_wafer"] * n)
+        rate = (mean_dep_rate(recipe) * self.p["rate_mult"] * (1 + DRIFT["rate_per_wafer"] * n)
+                * (1 + self.day["rate"]))
         if noise:
             rate *= 1 + rng.normal(0, NOISE["rate_wafer_frac"])
-        mean_thk = rate * 10.0 * DEP_TIME_S / 60.0
+        mean_thk = rate * 10.0 * dep_time_s / 60.0
 
         # Radial profile + chamber tilt + edge roll-off
         b = bowl_coefficient(recipe) + self.p["bowl_off"]
@@ -190,20 +202,20 @@ class Chamber:
             thk *= 1 + rng.normal(0, NOISE["thk_site_frac"], size=thk.size)
 
         # Refractive index map (slightly higher at edge where film is denser)
-        ri0 = mean_ri(recipe) + self.p["ri_off"] + DRIFT["ri_per_wafer"] * n
+        ri0 = mean_ri(recipe) + self.p["ri_off"] + DRIFT["ri_per_wafer"] * n + self.day["ri"]
         ri_map = ri0 + 0.004 * (RHO ** 2 - np.mean(RHO ** 2))
         if noise:
             ri_map = ri_map + rng.normal(0, NOISE["ri_wafer"]) \
                      + rng.normal(0, NOISE["ri_site"], size=ri_map.size)
 
-        s = stress(recipe) + self.p["stress_off"]
+        s = stress(recipe) + self.p["stress_off"] + self.day["stress"]
         if noise:
             s += rng.normal(0, NOISE["stress_wafer"])
 
         self.wafers_since_clean += 1
         self._count += 1
         return WaferResult(self.name, recipe, thk, ri_map, float(s),
-                           wafer_id=f"{self.name}-W{self._count:04d}")
+                           wafer_id=f"{self.name}-W{self._count:04d}", dep_time_s=dep_time_s)
 
 
 def make_fleet(seed=None):
