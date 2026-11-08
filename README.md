@@ -4,7 +4,7 @@
 
 **Case study:** a simulated single-wafer PECVD silicon nitride (SiNx) process across four chambers, plus real fab sensor data (UCI SECOM) for yield analysis.
 
-> **Status:** In progress. The PECVD simulator and metrology models are complete and checked against published trends. The analysis steps come next.
+> **Status:** In progress. Steps 1–3 are complete: simulator, Gauge R&R and screening DOE. Next is the response surface optimization.
 
 ---
 
@@ -13,8 +13,8 @@
 | Step | Method | Tool | Status |
 |---|---|---|---|
 | 1. PECVD chamber simulator | Physics-informed response model, 49-point wafer maps, 4 chambers | Python | Done |
-| 2. Measurement system analysis | Crossed Gauge R&R (ellipsometer, stress gauge) | JMP + Python | In progress |
-| 3. Factor screening | 2^(5-1) fractional factorial | JMP + Python | Planned |
+| 2. Measurement system analysis | Crossed Gauge R&R (ellipsometer, stress gauge) | JMP + Python | Done |
+| 3. Factor screening | 2^(5-1) fractional factorial | JMP + Python | Done |
 | 4. Process window optimization | Central composite RSM, multi-response desirability | JMP + Python | Planned |
 | 5. Variance sources and chamber matching | Nested variance components, ANOVA, Cpk per chamber | JMP + Python | Planned |
 | 6. Yield driver analysis (real data) | Data cleaning, predictor screening, PCA, classification on UCI SECOM | JMP + Python | Planned |
@@ -41,6 +41,30 @@ A crossed study with 10 wafers × 3 operators × 3 trials, run in random order a
 | ![](plots/jmp_grr_thickness.png) | ![](plots/jmp_grr_ri.png) | ![](plots/jmp_grr_stress.png) |
 
 ![Variability chart](plots/gauge_rr_variability.png)
+
+### Step 3: Screening DOE
+
+A **2^(5-1) Resolution V fractional factorial** with 4 center points (20 runs, randomized), designed in JMP (DOE → Screening Design). Resolution V keeps all 5 main effects and all 10 two-factor interactions unconfounded in 16 runs instead of 32. Each run was processed on chamber T1-A by `src/run_doe.py`, with stress measured as the **average of 3 readings**, the fix from Step 2. The model (main effects + 2-factor interactions) was fit in JMP Fit Model and in `src/screening_analysis.py`. RMSE and t ratios match.
+
+| Response | Significant effects (p < 0.05) | R² |
+|---|---|---|
+| Deposition rate | NH3/SiH4 (−), pressure (+), RF power (+), spacing (−) | 0.99 |
+| WIW non-uniformity | Spacing, RF power, pressure, **Power×Spacing**, **Power×Pressure** | 0.95 |
+| Refractive index | NH3/SiH4 (−), RF power (−) | 0.98 |
+| Stress | Pressure, RF power, temperature, spacing, NH3/SiH4. No interactions. | 0.98 |
+
+**Findings**
+- **The gas ratio sets the film.** NH3/SiH4 is the largest effect on both rate and RI, so it is the primary knob for hitting the RI target.
+- **Uniformity is driven by interactions.** Power×Spacing and Power×Pressure are significant, so uniformity can't be tuned one factor at a time.
+- **Temperature is an independent stress knob.** It moves stress strongly but has no significant effect on RI, so stress can be adjusted without moving the RI target.
+- **Strong curvature in every response** (center-point test p < 0.001). The 4 center points sit about +4 nm/min above the linear model's prediction for rate, while all 16 corner runs sit near −1. A first-order model can't describe the middle of the window, so **Step 4 uses a response surface design**.
+- **Watch for false positives.** Temp×NH3/SiH4 on uniformity (p = 0.049) is borderline. With 15 effects tested at α = 0.05, about one false positive is expected by chance, and the simulator contains no such interaction. It will be checked again in the RSM.
+
+| JMP Effect Summary | Curvature: Dep_Rate residuals |
+|---|---|
+| ![](plots/jmp_screening_effect_summary.png) | ![](plots/jmp_screening_residuals.png) |
+
+![Pareto of effects](plots/screening_pareto.png)
 
 ## The simulated process
 
@@ -79,6 +103,8 @@ cd src
 python pecvd.py                # run the center recipe on all 4 chambers
 python verify_trends.py        # literature trend check + plot
 python gauge_rr.py             # Step 2: Gauge R&R data + ANOVA results
+python run_doe.py ..\data\screening_design.csv          # Step 3: run the JMP design
+python screening_analysis.py ..\data\screening_results.csv  # Step 3: effects + Pareto
 ```
 
 ## Project structure

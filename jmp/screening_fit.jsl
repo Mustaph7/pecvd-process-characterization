@@ -1,0 +1,49 @@
+
+Fit Model(
+	Y( :Dep_Rate, :WIW_NU, :Stress, :RI ),
+	Effects(
+		:RF_Power, :Pressure, :Temp, :NH3_SiH4, :Spacing, :RF_Power * :Pressure,
+		:RF_Power * :Temp, :RF_Power * :NH3_SiH4, :RF_Power * :Spacing,
+		:Pressure * :Temp, :Pressure * :NH3_SiH4, :Pressure * :Spacing,
+		:Temp * :NH3_SiH4, :Temp * :Spacing, :NH3_SiH4 * :Spacing
+	),
+	Personality( "Standard Least Squares" ),
+	Emphasis( "Effect Screening" ),
+	Run(
+		:Dep_Rate << {Summary of Fit( 0 ), Analysis of Variance( 0 ),
+		Parameter Estimates( 1 ), Effect Details( 0 ), Sorted Estimates( 0 ),
+		Plot Actual by Predicted( 1 ), Plot Regression( 0 ),
+		Plot Residual by Predicted( 1 ), Plot Studentized Residuals( 1 ),
+		Plot Effect Leverage( 0 ), Plot Residual by Normal Quantiles( 0 ),
+		Box Cox Y Transformation( 1 )},
+		:WIW_NU << {Summary of Fit( 0 ), Analysis of Variance( 0 ),
+		Parameter Estimates( 1 ), Effect Details( 0 ), Sorted Estimates( 0 ),
+		Plot Actual by Predicted( 1 ), Plot Regression( 0 ),
+		Plot Residual by Predicted( 1 ), Plot Studentized Residuals( 1 ),
+		Plot Effect Leverage( 0 ), Plot Residual by Normal Quantiles( 0 ),
+		Box Cox Y Transformation( 1 )},
+		:Stress << {Summary of Fit( 0 ), Analysis of Variance( 0 ),
+		Parameter Estimates( 1 ), Effect Details( 0 ), Sorted Estimates( 0 ),
+		Plot Actual by Predicted( 1 ), Plot Regression( 0 ),
+		Plot Residual by Predicted( 1 ), Plot Studentized Residuals( 1 ),
+		Plot Effect Leverage( 0 ), Plot Residual by Normal Quantiles( 0 ),
+		Box Cox Y Transformation( 0 )},
+		:RI << {Summary of Fit( 0 ), Analysis of Variance( 0 ),
+		Parameter Estimates( 1 ), Effect Details( 0 ), Sorted Estimates( 0 ),
+		Plot Actual by Predicted( 1 ), Plot Regression( 0 ),
+		Plot Residual by Predicted( 1 ), Plot Studentized Residuals( 1 ),
+		Plot Effect Leverage( 0 ), Plot Residual by Normal Quantiles( 0 ),
+		Box Cox Y Transformation( 0 )},
+		Profiler(
+			1,
+			Confidence Intervals( 1 ),
+			Term Value(
+				:RF_Power( 450, Lock( 0 ), Show( 1 ) ),
+				:Pressure( 3.5, Lock( 0 ), Show( 1 ) ),
+				:Temp( 350, Lock( 0 ), Show( 1 ) ),
+				:NH3_SiH4( 5, Lock( 0 ), Show( 1 ) ),
+				:Spacing( 450, Lock( 0 ), Show( 1 ) )
+			)
+		)
+	)
+);
