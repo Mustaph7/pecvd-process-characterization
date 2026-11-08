@@ -19,6 +19,29 @@
 | 5. Variance sources and chamber matching | Nested variance components, ANOVA, Cpk per chamber | JMP + Python | Planned |
 | 6. Yield driver analysis (real data) | Data cleaning, predictor screening, PCA, classification on UCI SECOM | JMP + Python | Planned |
 
+## Results
+
+### Step 2: Gauge R&R
+
+A crossed study with 10 wafers × 3 operators × 3 trials, run in random order and analyzed with the AIAG ANOVA method in JMP (Variability Chart → Gauge R&R, k = 6). `src/gauge_rr.py` reproduces every number to rounding.
+
+| Gauge | % GRR (study var.) | % Tolerance | Distinct categories | Verdict |
+|---|---|---|---|---|
+| Ellipsometer: thickness | 7.5% | 5.5% | 18 | Acceptable |
+| Ellipsometer: refractive index | 19.6% | 14.3% | 7 | Marginal |
+| Stress gauge | 29.4% | 20.5% | **4** | Marginal, cannot reliably tell wafers apart |
+
+**Findings**
+- **The thickness data can be trusted as-is** for the DOE.
+- **The stress gauge needs action before a stress DOE.** It sits at the edge of AIAG's 30% limit, and with 4 distinct categories (AIAG requires at least 5) it can't reliably separate wafers. Repeatability (17.1% of tolerance) is larger than reproducibility (11.2%), so the problem is **the instrument, not the operators**.
+- **Recommended fix: average 3 readings per wafer.** That cuts the repeatability SD by a factor of √3 and brings the gauge to about 22% GRR with 6 distinct categories, without new hardware. Then reproducibility becomes the larger term, and the next lever is a standard measurement procedure for all operators.
+
+| Thickness | Refractive index | Stress |
+|---|---|---|
+| ![](plots/jmp_grr_thickness.png) | ![](plots/jmp_grr_ri.png) | ![](plots/jmp_grr_stress.png) |
+
+![Variability chart](plots/gauge_rr_variability.png)
+
 ## The simulated process
 
 | Factor | Range | Units |
