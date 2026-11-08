@@ -1,0 +1,4 @@
+Response,Interaction p,Interaction pooled,Repeatability SD,Reproducibility SD,GRR SD,Part SD,%SV Repeatability,%SV Reproducibility,%SV GRR,%SV Part,%Tol GRR,ndc,Verdict
+Thickness_A,0.001,False,1.739,2.1302,2.7499,36.602,4.7378,5.8036,7.4919,99.719,5.4998,18,Acceptable
+RI,0.439,False,0.00080248,0.00052075,0.00095663,0.0047872,16.438,10.667,19.596,98.061,14.349,7,Marginal
+Stress_MPa,0.03,False,2.8507,1.8685,3.4085,11.086,24.579,16.111,29.389,95.584,20.451,4,Marginal

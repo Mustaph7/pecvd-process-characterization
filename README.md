@@ -13,7 +13,7 @@
 | Step | Method | Tool | Status |
 |---|---|---|---|
 | 1. PECVD chamber simulator | Physics-informed response model, 49-point wafer maps, 4 chambers | Python | Done |
-| 2. Measurement system analysis | Crossed Gauge R&R (ellipsometer, stress gauge) | JMP + Python | Planned |
+| 2. Measurement system analysis | Crossed Gauge R&R (ellipsometer, stress gauge) | JMP + Python | In progress |
 | 3. Factor screening | 2^(5-1) fractional factorial | JMP + Python | Planned |
 | 4. Process window optimization | Central composite RSM, multi-response desirability | JMP + Python | Planned |
 | 5. Variance sources and chamber matching | Nested variance components, ANOVA, Cpk per chamber | JMP + Python | Planned |
@@ -55,6 +55,7 @@ pip install -r requirements.txt
 cd src
 python pecvd.py                # run the center recipe on all 4 chambers
 python verify_trends.py        # literature trend check + plot
+python gauge_rr.py             # Step 2: Gauge R&R data + ANOVA results
 ```
 
 ## Project structure
